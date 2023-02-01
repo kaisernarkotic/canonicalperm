@@ -1,79 +1,37 @@
 import networkx as nx
-from ogb.graphproppred import GraphPropPredDataset
-
-#Subgraphing Section
-def subgraph(startnode, khop):
-    subgraph = nx.Graph()
-    shortestpaths = nx.shortest_path_length(G, source=startnode, method='dijkstra')
-    for j in list(shortestpaths.keys()):
-        if shortestpaths[j] <= khop:
-            subgraph.add_edge(startnode, shortestpaths[j], weight=1)
-            #figure out how to get iterated node in the shortestpaths list
-    return subgraph
-
-G = nx.Graph()
-
-dataset = GraphPropPredDataset(name = "ogbg-molhiv")
-
-graph = dataset[0] 
-
-total_edges = int(graph[0].get("edge_index").size / 2)
-
-
-for i in range(0, total_edges):  
-  node1 = graph[0].get("edge_index")[0][i]
-  node2 = graph[0].get("edge_index")[1][i]
-  G.add_edge(node1, node2, weight = 1)
-
-totalnodes = graph[0].get("num_nodes")
-khop = 3
-
-#for i in range(0, totalnodes):
-#subg = subgraph(i, khop)
-startnode = int(totalnodes/2)
-subg = subgraph(startnode, khop)
-#print(subg)
-
-#CANNONICAL PERMUTATION SECTION
 import dgl
-import numpy as np
 import igraph
 import torch as th
-
-g = dgl.from_networkx(subg)
-
-#print(g)
-
-g_adj_matrix = g.adj_sparse('coo')
-
-fnode = list(g_adj_matrix[0].numpy())
-snode = list(g_adj_matrix[1].numpy())
-
-#print(fnode)
-#print(snode)
-
-ig_edgenum = len(g_adj_matrix[0])
+from ogb.graphproppred import GraphPropPredDataset
 
 
-listedges = []
+dataset = GraphPropPredDataset(name="ogbg-molhiv")
 
-for x in range(ig_edgenum):
-    listedges.append([fnode[x],snode[x]])
-#print(listedges)
+# dataset[0] returns a tuple <graph, associated label of the graph>
+graph, label = dataset[0]
+nx_graph = nx.Graph()
+nx_graph.add_edges_from(graph["edge_index"].T)
 
-ig = igraph.Graph(n=g.num_edges(), edges = listedges, directed = True)
+total_edges = int(len(graph["edge_index"][0]) / 2)
+
+totalnodes = graph["num_nodes"]
+khop = 3
+startnode = int(totalnodes / 2)
+
+nx_subgraph = nx.ego_graph(nx_graph, startnode, radius=khop)
+
+ig_subgraph = igraph.Graph.from_networkx(nx_subgraph)
+
+perm = ig_subgraph.canonical_permutation()
+
+# This line is where the problem is, you used n=num_edges, instead of num_nodes
+# ig = igraph.Graph(n=g.num_edges(), edges = listedges, directed = True)
 
 
-cperm = ig.canonical_permutation(sh = "f", color = None) #should return the number nodes not edges
+dgl_subgraph = dgl.from_networkx(nx_subgraph)
 
-print(cperm)
+print(perm)
 
-listedges = ig.get_edgelist()
+dgl_subgraph.ndata["canon"] = th.Tensor(perm)
 
-g = dgl.graph(listedges)
-
-print(g)
-
-g.ndata['canon'] = th.ones(g.num_nodes, cperm)
-
-print(g)
+print(dgl_subgraph.ndata["canon"])
